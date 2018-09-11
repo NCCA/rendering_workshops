@@ -51,6 +51,31 @@ void CurvScene::initGL() noexcept {
                        "../common/shaders/gouraud_vert.glsl",   // Vertex shader
                        "../common/shaders/gouraud_frag.glsl");  // Fragment shader
 
+    shader->loadShader("BrushedMetalProgram",
+                       "shaders/brushedmetal_vert.glsl",
+                       "shaders/brushedmetal_frag.glsl");
+
+
+    // Build the brushed metal shader the old fashioned way as we have an additional pipeline stage
+    shader->createShaderProgram("BrushedMetal");
+
+    shader->attachShader("BrushedMetalVertex",ngl::ShaderType::VERTEX);
+    shader->loadShaderSource("BrushedMetalVertex","shaders/brushedmetal_vert.glsl");
+
+    shader->attachShader("BrushedMetalFragment",ngl::ShaderType::FRAGMENT);
+    shader->loadShaderSource("BrushedMetalFragment","shaders/brushedmetal_frag.glsl");
+
+    shader->attachShader("BrushedMetalGeometry",ngl::ShaderType::GEOMETRY);
+    shader->loadShaderSource("BrushedMetalGeometry","shaders/brushedmetal_geo.glsl");
+
+    shader->compileShader("BrushedMetalVertex");
+    shader->compileShader("BrushedMetalFragment");
+    shader->compileShader("BrushedMetalGeometry");
+    shader->attachShaderToProgram("BrushedMetal","BrushedMetalVertex");
+    shader->attachShaderToProgram("BrushedMetal","BrushedMetalFragment");
+    shader->attachShaderToProgram("BrushedMetal","BrushedMetalGeometry");
+    shader->linkProgramObject("BrushedMetal");
+
     // Build the curvature shader the old fashioned way as we have an additional pipeline stage
     shader->createShaderProgram("Curvature");
 
@@ -87,6 +112,7 @@ void CurvScene::buildVAO() {
     ngl::VAOFactory::registerVAOCreator("multiBufferIndexVAO", MultiBufferIndexVAO::create);
 
     // Currently the filename is hardcoded (sorry)
+    //std::string filename = "../common/models/bust.off";
     std::string filename = "../common/models/fertility.off";
 
     typedef Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> MatrixXfr;
@@ -104,10 +130,6 @@ void CurvScene::buildVAO() {
     // Compute the principle curvature directions and magnitude using quadric fitting
     MatrixXfr K1,K2;
     Eigen::VectorXf KV1,KV2;
-
-    // This line below computes the principle curvature directions. Note that K1 and K2
-    // are the magnitudes, while KV1 and KV2 are the normalised directions. I multiply
-    // these together so that the curvature magnitudes can be visualised.
     igl::principal_curvature(V,F,K1,K2,KV1,KV2);
     MatrixXfr KV1_mat(K1.rows(), K1.cols()); KV1_mat << KV1,KV1,KV1;
     MatrixXfr KV2_mat(K2.rows(), K2.cols()); KV2_mat << KV2,KV2,KV2;
@@ -123,37 +145,18 @@ void CurvScene::buildVAO() {
     GLuint f_cnt = F.rows() * F.cols();
 
     // create a vao as a series of GL_TRIANGLES
-    m_vao.reset(static_cast<MultiBufferIndexVAO *>(ngl::VAOFactory::createVAO("multiBufferIndexVAO", GL_TRIANGLES)) );
+    m_vao = ngl::VAOFactory::createVAO("multiBufferIndexVAO", GL_TRIANGLES);
     m_vao->bind();
 
     // in this case we are going to set our data as the vertices above
     m_vao->setData(MultiBufferIndexVAO::VertexData(v_cnt * sizeof(float),Vertices.data()[0]));
 
-    // Copy across the face indices
-    m_vao->setIndices(f_cnt, F.data(), GL_UNSIGNED_INT);
+    // as we are storing the abstract we need to get the concrete here to call setIndices, do a quick cast
+    static_cast<MultiBufferIndexVAO *>( m_vao.get())->setIndices(f_cnt, F.data(), GL_UNSIGNED_INT);
 
     // Don't know why I need to specify this twice . . .
-    m_vao->setNumIndices(f_cnt);
+    m_vao->setNumIndices(f_cnt); 
 
-    // Set the attribute pointers for both shaders
-    (*shader)["Phong"]->use();
-    // Set the vertex attribute pointer
-    m_vao->setVertexAttributePointer(0, // GLuint _id
-                                     3, // GLint _size
-                                     GL_FLOAT, // GLenum _type
-                                     12 * sizeof(GLfloat), // GLsizei _stride
-                                     0, // unsigned int _dataOffset
-                                     false); // bool _normalise=false
-
-    // Set the normal attribute pointer
-    m_vao->setVertexAttributePointer(2, // GLuint _id
-                                     3, // GLint _size
-                                     GL_FLOAT, // GLenum _type
-                                     12 * sizeof(GLfloat), // GLsizei _stride
-                                     3, // unsigned int _dataOffset
-                                     true); // bool _normalise=false
-
-    (*shader)["Curvature"]->use();
     // Set the vertex attribute pointer
     m_vao->setVertexAttributePointer(0, // GLuint _id
                                      3, // GLint _size
@@ -162,7 +165,7 @@ void CurvScene::buildVAO() {
                                      0, // unsigned int _dataOffset
                                      false); // bool _normalise=false
     // Set the normal attribute pointer
-    m_vao->setVertexAttributePointer(2, // GLuint _id
+    m_vao->setVertexAttributePointer(1, // GLuint _id
                                      3, // GLint _size
                                      GL_FLOAT, // GLenum _type
                                      12 * sizeof(GLfloat), // GLsizei _stride
@@ -183,9 +186,6 @@ void CurvScene::buildVAO() {
                                      12 * sizeof(GLfloat), // GLsizei _stride
                                      9, // unsigned int _dataOffset
                                      true); // bool _normalise=false
-
-    // now unbind
-//    m_vao->unbind();
 }
 
 
@@ -209,8 +209,8 @@ void CurvScene::paintGL() noexcept {
     MV = m_V * M;
     N = glm::inverse(glm::mat3(MV));
 
-    (*shader)["GouraudProgram"]->use();
-    GLint pid = shader->getProgramID("GouraudProgram");
+    (*shader)["BrushedMetal"]->use();
+    GLint pid = shader->getProgramID("BrushedMetal");
     // Set this MVP on the GPU
     glUniformMatrix4fv(glGetUniformLocation(pid, "MVP"), //location of uniform
                        1, // how many matrices to transfer
@@ -224,15 +224,22 @@ void CurvScene::paintGL() noexcept {
                        1, // how many matrices to transfer
                        true, // whether to transpose matrix
                        glm::value_ptr(N)); // a raw pointer to the data
+    
+    // The shading parameters
+    glUniform1f(glGetUniformLocation(pid, "alphaX"), m_alphaX);
+    glUniform1f(glGetUniformLocation(pid, "alphaY"), m_alphaY);
+
     m_vao->draw();
 
     // Now draw with the curvature vectors displayed
-    (*shader)["Curvature"]->use();
-    pid = shader->getProgramID("Curvature");
-    // Set this MVP on the GPU
-    glUniformMatrix4fv(glGetUniformLocation(pid, "MVP"), //location of uniform
-                       1, // how many matrices to transfer
-                       false, // whether to transpose matrix
-                       glm::value_ptr(MVP)); // a raw pointer to the data
-    m_vao->draw();
+    if (m_vectors) {
+        (*shader)["Curvature"]->use();
+        pid = shader->getProgramID("Curvature");
+        // Set this MVP on the GPU
+        glUniformMatrix4fv(glGetUniformLocation(pid, "MVP"), //location of uniform
+                        1, // how many matrices to transfer
+                        false, // whether to transpose matrix
+                        glm::value_ptr(MVP)); // a raw pointer to the data
+        m_vao->draw();
+    }
 }
