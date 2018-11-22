@@ -4,7 +4,7 @@
 TEMPLATE = app
 
 # Is this using the lab build? (this is for my personal use - RS)
-LAB_BUILD = false
+LAB_BUILD = true
 
 # Check to see if you have a custom NGL installation directory
 NGLPATH = $$(NGLDIR)
@@ -32,7 +32,7 @@ else {
 # Check to see if there is a custom Eigen installation
 EIGENPATH = $$(EIGENDIR)
 isEmpty(EIGENPATH) {
-  EIGENPATH = /usr/local/include/eigen3
+  EIGENPATH = /public/devel/2018/include/eigen3
 }
 
 # The include path - includes a number of environment variables (see README.md)
