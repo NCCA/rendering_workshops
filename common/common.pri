@@ -49,7 +49,7 @@ OBJECTS_DIR = obj
 
 # The libs path (this will change depending on your platform
 if ($$LAB_BUILD) {
-  LIBS += -lXi -ldl -lX11 -lXrandr -lXinerama -lXcursor -lXxf86vm -lglfw3 
+  LIBS += -lXi -ldl -lX11 -lXrandr -lXinerama -lXcursor -lXxf86vm -lglfw3 /public/devel/2018/lib/libglfw3.a
 } else {
   LIBS += -lglfw
 }
